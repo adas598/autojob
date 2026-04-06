@@ -48,7 +48,7 @@ class JobFilterParams(BaseModel):
     score_min: int | None = None
     score_max: int | None = None
     show_all: bool = False
-    sort_by: str = "overall_score"
+    sort_by: str = "scraped_at"
     sort_order: str = "desc"
     page: int = 1
     per_page: int = 20

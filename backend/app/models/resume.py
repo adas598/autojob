@@ -12,9 +12,9 @@ class Resume(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     file_name: Mapped[str] = mapped_column(String(255))
     raw_text: Mapped[str] = mapped_column(Text, default="")
-    parsed_skills: Mapped[dict] = mapped_column(JSONB, default=list)
-    parsed_experience: Mapped[dict] = mapped_column(JSONB, default=list)
-    parsed_education: Mapped[dict] = mapped_column(JSONB, default=list)
+    parsed_skills: Mapped[list] = mapped_column(JSONB, default=list)
+    parsed_experience: Mapped[list] = mapped_column(JSONB, default=list)
+    parsed_education: Mapped[list] = mapped_column(JSONB, default=list)
     pdf_blob: Mapped[bytes] = mapped_column(LargeBinary)
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(

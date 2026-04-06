@@ -2,6 +2,7 @@ from collections.abc import AsyncGenerator
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.database import get_db
@@ -28,9 +29,23 @@ async def setup_test_db():
 
 @pytest_asyncio.fixture(loop_scope="session")
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
-    async with test_session_factory() as session:
+    async with test_engine.connect() as conn:
+        transaction = await conn.begin()
+        session = AsyncSession(bind=conn, expire_on_commit=False)
+
+        nested = await conn.begin_nested()
+
+        @event.listens_for(session.sync_session, "after_transaction_end")
+        def reopen_nested(sync_session, sync_transaction):
+            if conn.closed:
+                return
+            if not conn.in_nested_transaction():
+                conn.sync_connection.begin_nested()
+
         yield session
-        await session.rollback()
+
+        await session.close()
+        await transaction.rollback()
 
 
 @pytest_asyncio.fixture(loop_scope="session")

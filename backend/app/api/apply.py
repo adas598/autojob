@@ -18,18 +18,19 @@ router = APIRouter(prefix="/applications", tags=["applications"])
 
 @router.get("", response_model=ApplicationListResponse)
 async def list_applications(db: AsyncSession = Depends(get_db)):
-    query = select(Application).order_by(Application.updated_at.desc())
+    query = (
+        select(Application, Job.title, Job.company)
+        .outerjoin(Job, Application.job_id == Job.id)
+        .order_by(Application.updated_at.desc())
+    )
     result = await db.execute(query)
-    apps = result.scalars().all()
+    rows = result.all()
 
     items = []
-    for app_record in apps:
+    for app_record, job_title, job_company in rows:
         item = ApplicationResponse.model_validate(app_record)
-        job_result = await db.execute(select(Job).where(Job.id == app_record.job_id))
-        job = job_result.scalar_one_or_none()
-        if job:
-            item.job_title = job.title
-            item.job_company = job.company
+        item.job_title = job_title
+        item.job_company = job_company
         items.append(item)
 
     return ApplicationListResponse(items=items)
@@ -41,21 +42,22 @@ async def update_application_status(
     body: ApplicationStatusUpdate,
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Application).where(Application.id == application_id)
+    query = (
+        select(Application, Job.title, Job.company)
+        .outerjoin(Job, Application.job_id == Job.id)
+        .where(Application.id == application_id)
     )
-    app_record = result.scalar_one_or_none()
-    if not app_record:
+    result = await db.execute(query)
+    row = result.one_or_none()
+    if not row:
         raise HTTPException(status_code=404, detail="Application not found")
 
+    app_record, job_title, job_company = row
     app_record.status = body.status
     await db.commit()
     await db.refresh(app_record)
 
     item = ApplicationResponse.model_validate(app_record)
-    job_result = await db.execute(select(Job).where(Job.id == app_record.job_id))
-    job = job_result.scalar_one_or_none()
-    if job:
-        item.job_title = job.title
-        item.job_company = job.company
+    item.job_title = job_title
+    item.job_company = job_company
     return item

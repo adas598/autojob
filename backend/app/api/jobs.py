@@ -4,6 +4,7 @@ from math import ceil
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.database import get_db
 from app.models.base import JobType, Portal, Seniority, VisaStatus
@@ -12,6 +13,24 @@ from app.models.job_score import JobScore
 from app.schemas.job import JobListResponse, JobResponse
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
+
+SORTABLE_COLUMNS = {"scraped_at", "salary_min", "salary_max", "title", "company"}
+DEFAULT_MATCH_THRESHOLD = 50
+
+
+def _latest_score_subquery():
+    """Subquery returning the latest JobScore per job_id."""
+    return (
+        select(
+            JobScore.job_id,
+            JobScore.overall_score,
+            JobScore.rubric_breakdown,
+            JobScore.reasoning,
+        )
+        .distinct(JobScore.job_id)
+        .order_by(JobScore.job_id, JobScore.scored_at.desc())
+        .subquery("latest_score")
+    )
 
 
 @router.get("", response_model=JobListResponse)
@@ -32,8 +51,19 @@ async def list_jobs(
     per_page: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    query = select(Job)
+    latest_score = _latest_score_subquery()
 
+    query = (
+        select(
+            Job,
+            latest_score.c.overall_score,
+            latest_score.c.rubric_breakdown,
+            latest_score.c.reasoning,
+        )
+        .outerjoin(latest_score, Job.id == latest_score.c.job_id)
+    )
+
+    # Job-level filters
     if location:
         query = query.where(Job.location.ilike(f"%{location}%"))
     if salary_min is not None:
@@ -49,36 +79,47 @@ async def list_jobs(
     if portal:
         query = query.where(Job.portal == portal)
 
-    sort_column = getattr(Job, sort_by, Job.scraped_at)
-    if sort_order == "asc":
-        query = query.order_by(sort_column.asc())
-    else:
-        query = query.order_by(sort_column.desc())
+    # Score-level filters
+    if not show_all:
+        query = query.where(
+            (latest_score.c.overall_score >= DEFAULT_MATCH_THRESHOLD)
+            | (latest_score.c.overall_score.is_(None))
+        )
+    if score_min is not None:
+        query = query.where(latest_score.c.overall_score >= score_min)
+    if score_max is not None:
+        query = query.where(latest_score.c.overall_score <= score_max)
 
+    # Sorting
+    if sort_by == "overall_score":
+        sort_column = latest_score.c.overall_score
+    elif sort_by in SORTABLE_COLUMNS:
+        sort_column = getattr(Job, sort_by)
+    else:
+        sort_column = Job.scraped_at
+
+    if sort_order == "asc":
+        query = query.order_by(sort_column.asc().nullslast())
+    else:
+        query = query.order_by(sort_column.desc().nullslast())
+
+    # Count
     count_query = select(func.count()).select_from(query.subquery())
     total = (await db.execute(count_query)).scalar() or 0
 
+    # Paginate
     offset = (page - 1) * per_page
     query = query.offset(offset).limit(per_page)
 
     result = await db.execute(query)
-    jobs = result.scalars().all()
+    rows = result.all()
 
     items = []
-    for job in jobs:
+    for job, overall_score, rubric_breakdown, reasoning in rows:
         item = JobResponse.model_validate(job)
-        score_query = (
-            select(JobScore)
-            .where(JobScore.job_id == job.id)
-            .order_by(JobScore.scored_at.desc())
-            .limit(1)
-        )
-        score_result = await db.execute(score_query)
-        score = score_result.scalar_one_or_none()
-        if score:
-            item.overall_score = score.overall_score
-            item.rubric_breakdown = score.rubric_breakdown
-            item.reasoning = score.reasoning
+        item.overall_score = overall_score
+        item.rubric_breakdown = rubric_breakdown
+        item.reasoning = reasoning
         items.append(item)
 
     return JobListResponse(
@@ -92,22 +133,27 @@ async def list_jobs(
 
 @router.get("/{job_id}", response_model=JobResponse)
 async def get_job(job_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Job).where(Job.id == job_id))
-    job = result.scalar_one_or_none()
-    if not job:
+    latest_score = _latest_score_subquery()
+
+    query = (
+        select(
+            Job,
+            latest_score.c.overall_score,
+            latest_score.c.rubric_breakdown,
+            latest_score.c.reasoning,
+        )
+        .outerjoin(latest_score, Job.id == latest_score.c.job_id)
+        .where(Job.id == job_id)
+    )
+
+    result = await db.execute(query)
+    row = result.one_or_none()
+    if not row:
         raise HTTPException(status_code=404, detail="Job not found")
 
+    job, overall_score, rubric_breakdown, reasoning = row
     item = JobResponse.model_validate(job)
-    score_query = (
-        select(JobScore)
-        .where(JobScore.job_id == job.id)
-        .order_by(JobScore.scored_at.desc())
-        .limit(1)
-    )
-    score_result = await db.execute(score_query)
-    score = score_result.scalar_one_or_none()
-    if score:
-        item.overall_score = score.overall_score
-        item.rubric_breakdown = score.rubric_breakdown
-        item.reasoning = score.reasoning
+    item.overall_score = overall_score
+    item.rubric_breakdown = rubric_breakdown
+    item.reasoning = reasoning
     return item

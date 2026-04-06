@@ -17,6 +17,8 @@ async def upload_resume(file: UploadFile, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
 
     pdf_bytes = await file.read()
+    if len(pdf_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File size exceeds 10MB limit")
     await db.execute(update(Resume).values(is_active=False))
 
     resume = Resume(
