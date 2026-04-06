@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
@@ -11,6 +11,8 @@ router = APIRouter()
 @router.get("/", response_model=ProfileOut)
 async def get_profile(session: AsyncSession = Depends(get_session)):
     profile = await session.get(Profile, 1)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
     return profile
 
 
@@ -19,6 +21,8 @@ async def update_profile(
     update: ProfileUpdate, session: AsyncSession = Depends(get_session)
 ):
     profile = await session.get(Profile, 1)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
     for field, value in update.model_dump(exclude_none=True).items():
         setattr(profile, field, value)
     await session.commit()
