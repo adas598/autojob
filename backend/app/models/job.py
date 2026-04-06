@@ -1,5 +1,5 @@
 from sqlalchemy import Enum, Integer, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import ARRAY, TIMESTAMPTZ
+from sqlalchemy.dialects.postgresql import ARRAY, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import (
@@ -38,7 +38,7 @@ class Job(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     source_url: Mapped[str] = mapped_column(String(2048), default="")
     portal: Mapped[Portal] = mapped_column(Enum(Portal, name="portal_enum"))
     external_id: Mapped[str] = mapped_column(String(255))
-    scraped_at: Mapped[str] = mapped_column(TIMESTAMPTZ)
+    scraped_at: Mapped[str] = mapped_column(TIMESTAMP(timezone=True))
 
     scores: Mapped[list["JobScore"]] = relationship(back_populates="job")
     application: Mapped["Application | None"] = relationship(back_populates="job")
