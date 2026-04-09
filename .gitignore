@@ -1,9 +1,7 @@
 # IDE / AI tool metadata
 .adal/
-.agents/
 .augment/
 .bob/
-.claude/
 .codebuddy/
 .commandcode/
 .continue/
@@ -31,9 +29,9 @@
 .windsurf/
 .zencoder/
 
-# Skills (installed per-machine)
-skills/
-skills-lock.json
+# Skills (root-level installed per-machine)
+/skills/
+/skills-lock.json
 
 # Python
 __pycache__/
