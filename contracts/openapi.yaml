@@ -1,0 +1,439 @@
+openapi: 3.1.0
+info:
+  title: AutoJob API
+  version: 2.0.0
+  description: Job application automation API - shared contract for Track A (Data Pipeline) and Track B (Documents & UI)
+
+servers:
+  - url: http://localhost:8000
+    description: Local development
+  - url: https://auto-job-production.up.railway.app
+    description: Railway production
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: health
+      tags: [system]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  version: { type: string, example: "2.0.0" }
+
+  # --- Track A: Jobs & Scraping ---
+
+  /api/jobs:
+    get:
+      summary: List jobs with filters, sorting, pagination
+      operationId: listJobs
+      tags: [jobs]
+      parameters:
+        - name: portal
+          in: query
+          schema: { type: string, enum: [linkedin, indeed, glassdoor, google_jobs, seek] }
+        - name: job_type
+          in: query
+          schema: { type: string, enum: [full_time, part_time, contract, intern] }
+        - name: seniority
+          in: query
+          schema: { type: string, enum: [junior, mid, senior, lead, exec] }
+        - name: location
+          in: query
+          schema: { type: string }
+        - name: salary_min
+          in: query
+          schema: { type: integer }
+        - name: min_score
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: sort_by
+          in: query
+          schema: { type: string, enum: [score, date, salary, company], default: score }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: per_page
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        "200":
+          description: Paginated job list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/JobWithScore" }
+                  total: { type: integer }
+                  page: { type: integer }
+                  per_page: { type: integer }
+
+  /api/jobs/{job_id}:
+    get:
+      summary: Get job detail with score
+      operationId: getJob
+      tags: [jobs]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Job detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobDetail" }
+
+  /api/scrape/trigger:
+    post:
+      summary: Manually trigger a scrape run
+      operationId: triggerScrape
+      tags: [scraping]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                portals:
+                  type: array
+                  items: { type: string, enum: [linkedin, indeed, glassdoor, google_jobs, seek] }
+                  description: Portals to scrape (defaults to all enabled)
+      responses:
+        "202":
+          description: Scrape triggered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  run_ids: { type: array, items: { type: string, format: uuid } }
+
+  /api/scrape-runs:
+    get:
+      summary: List scrape run history
+      operationId: listScrapeRuns
+      tags: [scraping]
+      responses:
+        "200":
+          description: Scrape run list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ScrapeRun" }
+
+  /api/score/trigger:
+    post:
+      summary: Score all unscored jobs against active resume
+      operationId: triggerScoring
+      tags: [scoring]
+      responses:
+        "202":
+          description: Scoring triggered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  jobs_to_score: { type: integer }
+
+  # --- Track B: Resume, Applications, Documents ---
+
+  /api/resume:
+    post:
+      summary: Upload and parse a resume PDF
+      operationId: uploadResume
+      tags: [resume]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Resume uploaded and parsed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Resume" }
+
+  /api/resume/active:
+    get:
+      summary: Get the currently active resume
+      operationId: getActiveResume
+      tags: [resume]
+      responses:
+        "200":
+          description: Active resume
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Resume" }
+
+  /api/apply/{job_id}:
+    post:
+      summary: Generate tailored resume + cover letter for a job
+      operationId: applyToJob
+      tags: [applications]
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                template_name:
+                  type: string
+                  default: resume_classic
+      responses:
+        "201":
+          description: Application created with generated documents
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Application" }
+
+  /api/applications:
+    get:
+      summary: List applications with filters
+      operationId: listApplications
+      tags: [applications]
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [generated, applied, interview, rejected, offer] }
+      responses:
+        "200":
+          description: Application list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Application" }
+
+  /api/applications/{id}:
+    put:
+      summary: Update application status
+      operationId: updateApplication
+      tags: [applications]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string, enum: [generated, applied, interview, rejected, offer] }
+      responses:
+        "200":
+          description: Updated application
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Application" }
+
+  /api/applications/{id}/resume:
+    get:
+      summary: Download tailored resume
+      operationId: downloadResume
+      tags: [applications]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: format
+          in: query
+          schema: { type: string, enum: [pdf, docx], default: pdf }
+      responses:
+        "200":
+          description: Resume file
+          content:
+            application/pdf: {}
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document: {}
+
+  /api/applications/{id}/cover-letter:
+    get:
+      summary: Download cover letter
+      operationId: downloadCoverLetter
+      tags: [applications]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: format
+          in: query
+          schema: { type: string, enum: [pdf, docx], default: pdf }
+      responses:
+        "200":
+          description: Cover letter file
+          content:
+            application/pdf: {}
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document: {}
+
+  /api/applications/stats:
+    get:
+      summary: Application status counts for dashboard
+      operationId: applicationStats
+      tags: [applications]
+      responses:
+        "200":
+          description: Status counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated: { type: integer }
+                  applied: { type: integer }
+                  interview: { type: integer }
+                  rejected: { type: integer }
+                  offer: { type: integer }
+
+  # --- Shared: Settings ---
+
+  /api/settings:
+    get:
+      summary: Get all settings
+      operationId: getSettings
+      tags: [settings]
+      responses:
+        "200":
+          description: Settings map
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    put:
+      summary: Update settings
+      operationId: updateSettings
+      tags: [settings]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/usage:
+    get:
+      summary: Get LLM usage stats
+      operationId: getUsage
+      tags: [settings]
+      responses:
+        "200":
+          description: Usage statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_tokens_input: { type: integer }
+                  total_tokens_output: { type: integer }
+                  total_cost_usd: { type: number }
+                  by_operation:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        count: { type: integer }
+                        tokens_input: { type: integer }
+                        tokens_output: { type: integer }
+                        cost_usd: { type: number }
+
+components:
+  schemas:
+    JobWithScore:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        company: { type: string }
+        location: { type: string }
+        salary_min: { type: integer, nullable: true }
+        salary_max: { type: integer, nullable: true }
+        job_type: { type: string, nullable: true }
+        seniority: { type: string, nullable: true }
+        visa_info: { type: string, nullable: true }
+        portal: { type: string }
+        source_url: { type: string }
+        scraped_at: { type: string, format: date-time }
+        overall_score: { type: integer, nullable: true }
+
+    JobDetail:
+      allOf:
+        - $ref: "#/components/schemas/JobWithScore"
+        - type: object
+          properties:
+            description: { type: string }
+            external_id: { type: string }
+            scraped_via: { type: string }
+            rubric_breakdown: { type: object, nullable: true }
+            reasoning: { type: string, nullable: true }
+
+    Resume:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        file_name: { type: string }
+        parsed_skills: { type: array, items: { type: string } }
+        parsed_experience: { type: array }
+        parsed_education: { type: array }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    Application:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        job_id: { type: string, format: uuid }
+        job_title: { type: string }
+        company: { type: string }
+        template_used: { type: string }
+        status: { type: string }
+        applied_at: { type: string, format: date-time, nullable: true }
+        updated_at: { type: string, format: date-time }
+
+    ScrapeRun:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        portal: { type: string }
+        scraped_via: { type: string }
+        status: { type: string }
+        jobs_found: { type: integer }
+        jobs_new: { type: integer }
+        error_message: { type: string, nullable: true }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time, nullable: true }

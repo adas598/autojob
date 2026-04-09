@@ -1,0 +1,9 @@
+[project]
+name = "autojob-backend"
+version = "2.0.0"
+description = "AutoJob - Job application automation backend"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Shared LLM input/output contracts for AutoJob. Both Track A (scorer) and Track B (template filling) implement against these schemas.",
+
+  "definitions": {
+    "ParsedResume": {
+      "type": "object",
+      "required": ["skills", "experience", "education", "summary"],
+      "properties": {
+        "skills": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of skills extracted from resume"
+        },
+        "experience": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["title", "company", "dates", "bullets"],
+            "properties": {
+              "title": { "type": "string" },
+              "company": { "type": "string" },
+              "dates": { "type": "string" },
+              "bullets": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            }
+          }
+        },
+        "education": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["degree", "institution", "year"],
+            "properties": {
+              "degree": { "type": "string" },
+              "institution": { "type": "string" },
+              "year": { "type": "string" }
+            }
+          }
+        },
+        "summary": { "type": "string" }
+      }
+    },
+
+    "ScoringInput": {
+      "type": "object",
+      "required": ["job_title", "company", "job_description", "parsed_resume"],
+      "properties": {
+        "job_title": { "type": "string" },
+        "company": { "type": "string" },
+        "job_description": { "type": "string" },
+        "parsed_resume": { "$ref": "#/definitions/ParsedResume" }
+      }
+    },
+
+    "ScoringOutput": {
+      "type": "object",
+      "required": ["overall_score", "rubric_breakdown", "reasoning"],
+      "properties": {
+        "overall_score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "rubric_breakdown": {
+          "type": "object",
+          "required": ["skills_match", "experience_fit", "role_alignment", "education_match", "location_logistics", "visa_compatibility"],
+          "properties": {
+            "skills_match": { "type": "integer", "minimum": 0, "maximum": 100 },
+            "experience_fit": { "type": "integer", "minimum": 0, "maximum": 100 },
+            "role_alignment": { "type": "integer", "minimum": 0, "maximum": 100 },
+            "education_match": { "type": "integer", "minimum": 0, "maximum": 100 },
+            "location_logistics": { "type": "integer", "minimum": 0, "maximum": 100 },
+            "visa_compatibility": { "type": "integer", "minimum": 0, "maximum": 100 }
+          }
+        },
+        "reasoning": { "type": "string" }
+      }
+    },
+
+    "TemplateFillInput": {
+      "type": "object",
+      "required": ["job_title", "company", "job_description", "parsed_resume"],
+      "properties": {
+        "job_title": { "type": "string" },
+        "company": { "type": "string" },
+        "job_description": { "type": "string" },
+        "parsed_resume": { "$ref": "#/definitions/ParsedResume" }
+      }
+    },
+
+    "TemplateFillOutput": {
+      "type": "object",
+      "required": ["tailored_summary", "tailored_experience", "skills_to_highlight", "education_emphasis", "cover_letter_paragraphs"],
+      "properties": {
+        "tailored_summary": {
+          "type": "string",
+          "description": "2-3 sentence professional summary tailored to the job"
+        },
+        "tailored_experience": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["title", "company", "dates", "bullets"],
+            "properties": {
+              "title": { "type": "string" },
+              "company": { "type": "string" },
+              "dates": { "type": "string" },
+              "bullets": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Rewritten bullets emphasizing relevance to the target job"
+              }
+            }
+          }
+        },
+        "skills_to_highlight": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Skills from resume most relevant to this job, ordered by importance"
+        },
+        "education_emphasis": {
+          "type": "string",
+          "description": "Education section tailored to highlight relevant coursework or degrees"
+        },
+        "cover_letter_paragraphs": {
+          "type": "object",
+          "required": ["opening", "body", "closing"],
+          "properties": {
+            "opening": { "type": "string", "description": "Why you're interested in this role at this company" },
+            "body": { "type": "string", "description": "How your experience maps to their requirements" },
+            "closing": { "type": "string", "description": "Call to action and enthusiasm" }
+          }
+        }
+      }
+    }
+  }
+}
